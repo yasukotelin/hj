@@ -56,77 +56,39 @@ EOF
             return 0
             ;;
         "")
-            # インタラクティブ選択
+            # fzfを使用したインタラクティブ選択
             if [ ! -f "$HISTORY_FILE" ] || [ ! -s "$HISTORY_FILE" ]; then
                 echo "履歴が空です"
                 return 1
             fi
             
-            # 履歴を配列に読み込み（最新順）
-            local dirs=""
-            local temp_file
-            temp_file=$(mktemp)
-            
-            # 履歴を逆順で取得
-            if command -v tac >/dev/null 2>&1; then
-                tac "$HISTORY_FILE" > "$temp_file"
-            elif command -v tail >/dev/null 2>&1 && tail -r /dev/null >/dev/null 2>&1; then
-                tail -r "$HISTORY_FILE" > "$temp_file"
-            else
-                cat "$HISTORY_FILE" > "$temp_file"
-            fi
-            
-            # 配列に読み込み
-            local i=0
-            while IFS= read -r line; do
-                if [ -n "$line" ]; then
-                    eval "dir_$i=\"\$line\""
-                    i=$((i + 1))
-                fi
-            done < "$temp_file"
-            rm -f "$temp_file"
-            
-            if [ $i -eq 0 ]; then
-                echo "履歴が空です"
+            # fzfがインストールされているかチェック
+            if ! command -v fzf >/dev/null 2>&1; then
+                echo "エラー: fzfがインストールされていません"
+                echo "fzfをインストールしてから再度実行してください"
+                echo ""
+                echo "インストール方法:"
+                echo "  macOS: brew install fzf"
+                echo "  Ubuntu/Debian: sudo apt install fzf"
+                echo "  その他: https://github.com/junegunn/fzf#installation"
                 return 1
             fi
             
-            echo "履歴から選択してください:"
-            echo
+            # 履歴を逆順で取得してfzfに渡す
+            local selected_dir
+            if command -v tac >/dev/null 2>&1; then
+                selected_dir=$(tac "$HISTORY_FILE" | fzf --prompt="履歴から選択: " --height=40% --reverse)
+            elif command -v tail >/dev/null 2>&1 && tail -r /dev/null >/dev/null 2>&1; then
+                selected_dir=$(tail -r "$HISTORY_FILE" | fzf --prompt="履歴から選択: " --height=40% --reverse)
+            else
+                selected_dir=$(cat "$HISTORY_FILE" | fzf --prompt="履歴から選択: " --height=40% --reverse)
+            fi
             
-            # 選択肢を表示
-            local j=0
-            while [ $j -lt $i ]; do
-                eval "current_dir=\$dir_$j"
-                printf "%2d) %s\n" $((j + 1)) "$current_dir"
-                j=$((j + 1))
-            done
-            
-            # ユーザーの選択を待つ
-            printf "\n選択してください (1-%d, Enterでキャンセル): " $i
-            read -r selection
-            
-            # 空入力の場合はキャンセル
-            if [ -z "$selection" ]; then
+            # fzfでキャンセルされた場合
+            if [ -z "$selected_dir" ]; then
                 echo "キャンセルしました"
                 return 0
             fi
-            
-            # 入力検証（数値チェック）
-            case "$selection" in
-                ''|*[!0-9]*)
-                    echo "無効な選択です"
-                    return 1
-                    ;;
-            esac
-            
-            if [ "$selection" -lt 1 ] || [ "$selection" -gt $i ]; then
-                echo "無効な選択です"
-                return 1
-            fi
-            
-            # 選択されたディレクトリを取得
-            eval "selected_dir=\$dir_$((selection - 1))"
             
             # ディレクトリが存在するかチェック
             if [ ! -d "$selected_dir" ]; then
@@ -138,7 +100,6 @@ EOF
             fi
             
             # ディレクトリに移動
-            echo "移動中: $selected_dir"
             cd "$selected_dir"
             return 0
             ;;
