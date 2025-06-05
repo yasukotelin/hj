@@ -1,77 +1,83 @@
 # hj
 
-z jumpライクな履歴ジャンプ機能を提供するシェルスクリプトです。fzfを使用したインタラクティブな選択でディレクトリに素早く移動できます。
+A shell script that provides z jump-like directory history jumping functionality. 
+It allows quick directory navigation with interactive selection using fzf.
 
 ## Requirements
 
 - [fzf](https://github.com/junegunn/fzf)
 
-## インストール
+## Installation
 
-1. `hj.sh`をダウンロード
-2. シェル設定ファイル（`.bashrc`, `.zshrc`等）に以下を追加:
+1. Download `hj.sh`
+
+```bash
+curl -o /path/to/hj.sh https://github.com/yasukotelin/hj/blob/main/hj.sh
+```
+
+2. Add the following to your shell configuration file (`.bashrc`, `.zshrc`, etc.):
 
 ```bash
 source /path/to/hj.sh
 ```
 
-## 使用方法
+## Usage
 
-### 基本コマンド
+### Basic Commands
 
 ```bash
-# 履歴からインタラクティブに選択してジャンプ
+# Jump interactively by selecting from history
 hj
 
-# 履歴一覧を表示
+# Show history list
 hj --list
 hj -l
 
-# ヘルプを表示
+# Show help
 hj --help
 hj -h
 ```
 
-### 履歴から選択してジャンプ
+### Select and Jump from History
 
 ```bash
 hj
 ```
 
-fzfが起動し選択したディレクトリに `cd` します。
+This launches fzf and `cd`s to the selected directory.
 
-### 履歴の自動保存
+### Automatic History Saving
 
-`cd`コマンドを使用すると自動的に履歴が保存されます：
+History is automatically saved when using the `cd` command:
 
 ```bash
 cd /path/to/project
 cd ~/Documents
 cd /var/log
-# これらのパスが ~/.hj_history に保存される
+# These paths are saved to ~/.hj_history
 ```
 
-## 履歴ファイル
+## History File
 
-履歴は`~/.hj_history`に保存されます。このファイルは：
+History is saved to `~/.hj_history`. This file:
 
-- 最新の訪問ディレクトリが末尾に追加
-- 重複するパスは自動的に削除
-- 最大1000行に制限
-- 存在しないディレクトリは自動的に削除
+- Appends the latest visited directories to the end
+- Automatically removes duplicate paths
+- Limited to maximum 1000 lines
+- Automatically removes non-existent directories
 
-## 使用例
+## Usage Examples
 
 ```bash
-# プロジェクトディレクトリに移動
+# Navigate to project directories
 cd ~/projects/myapp
 cd ~/projects/webapp
 cd /etc/nginx
 
-# 履歴一覧を確認
+# Check history list
 hj --list
 ```
 
-## ライセンス
+## License
 
 MIT License
