@@ -2,24 +2,129 @@
 
 HISTORY_FILE="$HOME/.hj_history"
 
+# frecencyスコアを計算してソート
+hj_calculate_frecency_and_sort() {
+    if [ ! -f "$HISTORY_FILE" ] || [ ! -s "$HISTORY_FILE" ]; then
+        return
+    fi
+    
+    local current_time=$(/bin/date +%s)
+    local temp_file="${HISTORY_FILE}.frecency"
+    
+    while IFS='|' read -r path rank timestamp; do
+        # 空行やフィールドが不完全な行をスキップ
+        if [ -z "$path" ] || [ -z "$rank" ] || [ -z "$timestamp" ]; then
+            continue
+        fi
+        
+        # ディレクトリが存在するかチェック
+        if [ ! -d "$path" ]; then
+            continue
+        fi
+        
+        # 時間による減衰係数を計算（最近ほど高いスコア）
+        local time_diff=$((current_time - timestamp))
+        local time_factor=1
+        
+        if [ $time_diff -lt 3600 ]; then
+            # 1時間以内は最高係数
+            time_factor=4
+        elif [ $time_diff -lt 86400 ]; then
+            # 1日以内
+            time_factor=2
+        elif [ $time_diff -lt 604800 ]; then
+            # 1週間以内
+            time_factor=1
+        else
+            # それ以上古い
+            time_factor=0.5
+        fi
+        
+        # frecencyスコア = ランク × 時間係数
+        local frecency_score=$(/usr/bin/awk "BEGIN {print $rank * $time_factor}")
+        echo "$frecency_score|$path|$rank|$timestamp" >> "$temp_file"
+    done < "$HISTORY_FILE"
+    
+    # スコア順でソート（降順）
+    if [ -f "$temp_file" ]; then
+        /usr/bin/sort -t'|' -k1,1nr "$temp_file"
+        /bin/rm "$temp_file"
+    fi
+}
+
+# 履歴のエイジング処理
+hj_age_history() {
+    if [ ! -f "$HISTORY_FILE" ] || [ ! -s "$HISTORY_FILE" ]; then
+        return
+    fi
+    
+    local temp_file="${HISTORY_FILE}.aging"
+    local total_rank=0
+    
+    # 総ランクを計算
+    while IFS='|' read -r path rank timestamp; do
+        if [ -n "$rank" ] && [ -n "$path" ]; then
+            total_rank=$(/usr/bin/awk "BEGIN {print $total_rank + $rank}")
+        fi
+    done < "$HISTORY_FILE"
+    
+    # 総ランクが9000を超えた場合はエイジング実行
+    if /usr/bin/awk "BEGIN {exit !($total_rank > 9000)}"; then
+        while IFS='|' read -r path rank timestamp; do
+            if [ -n "$path" ] && [ -n "$rank" ] && [ -n "$timestamp" ]; then
+                local new_rank=$(/usr/bin/awk "BEGIN {print $rank * 0.99}")
+                # ランクが1未満になった場合は削除、そうでなければ保持
+                if /usr/bin/awk "BEGIN {exit !($new_rank >= 1)}"; then
+                    echo "$path|$new_rank|$timestamp" >> "$temp_file"
+                fi
+            fi
+        done < "$HISTORY_FILE"
+        /bin/mv "$temp_file" "$HISTORY_FILE"
+    fi
+}
+
 # 履歴保存フック関数
 hj_add_to_history() {
     local current_dir="$(pwd)"
+    local current_time=$(date +%s)
     
     # 履歴ファイルが存在しない場合は作成
     [ ! -f "$HISTORY_FILE" ] && touch "$HISTORY_FILE"
     
-    # 現在のディレクトリが既に履歴にある場合は削除（重複を避けるため）
+    local temp_file="${HISTORY_FILE}.tmp"
+    local found=0
+    local new_rank=1.0
+    
+    # 既存のエントリを探して更新、または新規追加
     if [ -f "$HISTORY_FILE" ]; then
-        grep -v "^$current_dir$" "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" 2>/dev/null || true
-        mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+        while IFS='|' read -r path rank timestamp; do
+            if [ "$path" = "$current_dir" ]; then
+                # 既存エントリの場合はランクを増加
+                new_rank=$(/usr/bin/awk "BEGIN {print $rank + 1}")
+                echo "$current_dir|$new_rank|$current_time" >> "$temp_file"
+                found=1
+            elif [ -n "$path" ] && [ -d "$path" ]; then
+                # 他の有効なエントリはそのまま保持
+                echo "$path|$rank|$timestamp" >> "$temp_file"
+            fi
+        done < "$HISTORY_FILE"
+        
+        # 新規エントリの場合
+        if [ $found -eq 0 ]; then
+            echo "$current_dir|1.0|$current_time" >> "$temp_file"
+        fi
+        
+        /bin/mv "$temp_file" "$HISTORY_FILE"
+    else
+        # 履歴ファイルが空の場合
+        echo "$current_dir|1.0|$current_time" > "$HISTORY_FILE"
     fi
     
-    # 現在のディレクトリを履歴の末尾に追加
-    echo "$current_dir" >> "$HISTORY_FILE"
+    # エイジング処理
+    hj_age_history
     
     # 履歴を最大1000行に制限
-    tail -n 1000 "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+    /usr/bin/tail -n 1000 "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && /bin/mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
 }
 
 # hjコマンド本体
@@ -41,14 +146,10 @@ EOF
                 echo "History is empty"
                 return 0
             fi
-            # 履歴を逆順（最新が上）で表示
-            if command -v tac >/dev/null 2>&1; then
-                tac "$HISTORY_FILE"
-            elif command -v tail >/dev/null 2>&1 && tail -r /dev/null >/dev/null 2>&1; then
-                tail -r "$HISTORY_FILE"
-            else
-                cat "$HISTORY_FILE"
-            fi
+            # frecencyスコア順で表示（スコアの高い順）
+            hj_calculate_frecency_and_sort | while IFS='|' read -r score path rank timestamp; do
+                echo "$path"
+            done
             return 0
             ;;
         "")
@@ -70,15 +171,11 @@ EOF
                 return 1
             fi
             
-            # 履歴を逆順で取得してfzfに渡す
+            # frecencyスコア順でfzfに渡す
             local selected_dir
-            if command -v tac >/dev/null 2>&1; then
-                selected_dir=$(tac "$HISTORY_FILE" | fzf --prompt="Select from history: " --height=40% --reverse)
-            elif command -v tail >/dev/null 2>&1 && tail -r /dev/null >/dev/null 2>&1; then
-                selected_dir=$(tail -r "$HISTORY_FILE" | fzf --prompt="Select from history: " --height=40% --reverse)
-            else
-                selected_dir=$(cat "$HISTORY_FILE" | fzf --prompt="Select from history: " --height=40% --reverse)
-            fi
+            selected_dir=$(hj_calculate_frecency_and_sort | while IFS='|' read -r score path rank timestamp; do
+                echo "$path"
+            done | fzf --prompt="Select from history: " --height=40% --reverse)
             
             # fzfでキャンセルされた場合
             if [ -z "$selected_dir" ]; then
@@ -107,7 +204,77 @@ EOF
     esac
 }
 
+# 簡略化したFrecency履歴保存
+hj_add_to_history_simple() {
+    local current_dir="$(pwd)"
+    local current_time=$(/bin/date +%s)
+    
+    # 履歴ファイルが存在しない場合は作成
+    [ ! -f "$HISTORY_FILE" ] && touch "$HISTORY_FILE"
+    
+    local temp_file="${HISTORY_FILE}.tmp"
+    local found=0
+    local new_rank=1.0
+    
+    # 既存のエントリを探して更新、または新規追加
+    if [ -s "$HISTORY_FILE" ]; then
+        while IFS='|' read -r path rank timestamp; do
+            if [ "$path" = "$current_dir" ]; then
+                # 既存エントリの場合はランクを増加
+                new_rank=$(/usr/bin/awk "BEGIN {print $rank + 1}")
+                echo "$current_dir|$new_rank|$current_time" >> "$temp_file"
+                found=1
+            elif [ -n "$path" ] && [ -d "$path" ]; then
+                # 他の有効なエントリはそのまま保持
+                echo "$path|$rank|$timestamp" >> "$temp_file"
+            fi
+        done < "$HISTORY_FILE"
+        
+        # 新規エントリの場合
+        if [ $found -eq 0 ]; then
+            echo "$current_dir|1.0|$current_time" >> "$temp_file"
+        fi
+        
+        /bin/mv "$temp_file" "$HISTORY_FILE"
+    else
+        # 履歴ファイルが空の場合
+        echo "$current_dir|1.0|$current_time" > "$HISTORY_FILE"
+    fi
+    
+    # 履歴を最大1000行に制限
+    /usr/bin/tail -n 1000 "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && /bin/mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+}
+
 # cdコマンドをオーバーライド
 cd() {
-    builtin cd "$@" && hj_add_to_history
+    if builtin cd "$@"; then
+        local current_dir="$(pwd)"
+        local current_time=$(/bin/date +%s)
+        [ ! -f "$HISTORY_FILE" ] && touch "$HISTORY_FILE"
+        
+        local new_rank=1.0
+        
+        # 既存エントリがあるかチェックしてランクを取得
+        if [ -s "$HISTORY_FILE" ]; then
+            local existing_line=$(/usr/bin/grep "^${current_dir}|" "$HISTORY_FILE" | head -n 1)
+            if [ -n "$existing_line" ]; then
+                local old_rank=$(echo "$existing_line" | cut -d'|' -f2)
+                new_rank=$(/usr/bin/awk "BEGIN {print $old_rank + 1}")
+            fi
+            
+            # 既存エントリを削除
+            /usr/bin/grep -v "^${current_dir}|" "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" 2>/dev/null || cp "$HISTORY_FILE" "${HISTORY_FILE}.tmp"
+            /bin/mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+        fi
+        
+        # 新しいエントリを追加
+        echo "$current_dir|$new_rank|$current_time" >> "$HISTORY_FILE"
+        
+        # 履歴を最大1000行に制限
+        /usr/bin/tail -n 1000 "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && /bin/mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+        
+        return 0
+    else
+        return $?
+    fi
 }
