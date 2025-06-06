@@ -52,34 +52,32 @@ hj_calculate_frecency_and_sort() {
     fi
 }
 
-# 履歴のエイジング処理
+# 簡略化されたエイジング処理
 hj_age_history() {
     if [ ! -f "$HISTORY_FILE" ] || [ ! -s "$HISTORY_FILE" ]; then
         return
     fi
     
-    local temp_file="${HISTORY_FILE}.aging"
-    local total_rank=0
+    # 行数でエイジングを判定（1000行を超えた場合）
+    local line_count=$(/usr/bin/wc -l < "$HISTORY_FILE" 2>/dev/null || echo "0")
     
-    # 総ランクを計算
-    while IFS='|' read -r path rank timestamp; do
-        if [ -n "$rank" ] && [ -n "$path" ]; then
-            total_rank=$(/usr/bin/awk "BEGIN {print $total_rank + $rank}")
-        fi
-    done < "$HISTORY_FILE"
-    
-    # 総ランクが9000を超えた場合はエイジング実行
-    if /usr/bin/awk "BEGIN {exit !($total_rank > 9000)}"; then
+    if [ "$line_count" -gt 1000 ]; then
+        local temp_file="${HISTORY_FILE}.aging"
+        
+        # 全ランクを0.99倍して減衰
         while IFS='|' read -r path rank timestamp; do
             if [ -n "$path" ] && [ -n "$rank" ] && [ -n "$timestamp" ]; then
-                local new_rank=$(/usr/bin/awk "BEGIN {print $rank * 0.99}")
-                # ランクが1未満になった場合は削除、そうでなければ保持
+                local new_rank=$(/usr/bin/awk "BEGIN {printf \"%.2f\", $rank * 0.99}")
+                # ランクが1以上の場合のみ保持
                 if /usr/bin/awk "BEGIN {exit !($new_rank >= 1)}"; then
                     echo "$path|$new_rank|$timestamp" >> "$temp_file"
                 fi
             fi
         done < "$HISTORY_FILE"
-        /bin/mv "$temp_file" "$HISTORY_FILE"
+        
+        if [ -f "$temp_file" ]; then
+            /bin/mv "$temp_file" "$HISTORY_FILE"
+        fi
     fi
 }
 
@@ -269,6 +267,9 @@ cd() {
         
         # 新しいエントリを追加
         echo "$current_dir|$new_rank|$current_time" >> "$HISTORY_FILE"
+        
+        # エイジング処理（1000行を超えた場合に減衰）
+        hj_age_history 2>/dev/null || true
         
         # 履歴を最大1000行に制限
         /usr/bin/tail -n 1000 "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && /bin/mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
