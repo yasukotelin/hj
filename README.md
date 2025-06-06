@@ -57,14 +57,58 @@ cd /var/log
 # These paths are saved to ~/.hj_history
 ```
 
-## History File
+## History Management
 
-History is saved to `~/.hj_history`. This file:
+### Frecency Algorithm
 
-- Appends the latest visited directories to the end
-- Automatically removes duplicate paths
-- Limited to maximum 1000 lines
-- Automatically removes non-existent directories
+hj uses a "frecency" (frequency + recency) algorithm inspired by [z](https://github.com/rupa/z) to intelligently rank directories. This means frequently visited and recently accessed directories appear higher in the selection list.
+
+### History File Format
+
+History is saved to `~/.hj_history` with the following format:
+
+```
+/path/to/directory|rank|last_access_time
+```
+
+Example:
+```
+/Users/user/projects/webapp|15.5|1672531200
+/Users/user/Documents|8.2|1672530800
+/Users/user/Downloads|3.1|1672525400
+```
+
+### Ranking System
+
+- **Initial Access**: New directories start with rank 1.0
+- **Repeated Access**: Each visit increases the rank by 1.0
+- **Time Decay**: Recent access gets higher priority based on time factors:
+  - Within 1 hour: 4x multiplier
+  - Within 1 day: 2x multiplier  
+  - Within 1 week: 1x multiplier
+  - Older than 1 week: 0.5x multiplier
+- **Frecency Score**: `rank × time_factor` determines display order
+
+### Automatic Maintenance
+
+- **Aging**: When history exceeds 1000 lines, all ranks are multiplied by 0.99
+- **Cleanup**: Entries with rank < 1.0 are automatically removed
+- **Validation**: Non-existent directories are filtered out during display
+- **Deduplication**: Duplicate paths are automatically handled
+
+### How It Works
+
+1. **Directory Visit**: When you `cd` to a directory:
+   - If it's new → rank = 1.0
+   - If it exists → rank = old_rank + 1.0
+   - Update last access time
+
+2. **Selection Display**: When you run `hj`:
+   - Calculate frecency score for each entry
+   - Sort by score (highest first)
+   - Display in fzf for selection
+
+This ensures that your most frequently used and recently accessed directories appear at the top of the list, making navigation more efficient over time.
 
 ## Usage Examples
 
