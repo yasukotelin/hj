@@ -177,7 +177,6 @@ EOF
             
             # fzfでキャンセルされた場合
             if [ -z "$selected_dir" ]; then
-                echo "Cancelled"
                 return 0
             fi
             
