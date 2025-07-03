@@ -173,7 +173,7 @@ EOF
             local selected_dir
             selected_dir=$(hj_calculate_frecency_and_sort | while IFS='|' read -r score path rank timestamp; do
                 echo "$path"
-            done | fzf --prompt="Select from history: " --height=40% --reverse)
+            done | fzf --prompt="Select from history: " --height=40% --reverse --no-sort)
             
             # fzfでキャンセルされた場合
             if [ -z "$selected_dir" ]; then
