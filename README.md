@@ -9,6 +9,15 @@ It allows quick directory navigation with interactive selection using fzf.
 
 ## Installation
 
+### Using Homebrew (Recommended)
+
+```bash
+brew tap yasukotelin/tap
+brew install yasukotelin/tap/hj
+```
+
+### Manual Installation
+
 1. Download `hj.sh`
 
 ```bash
