@@ -16,6 +16,18 @@ brew tap yasukotelin/tap
 brew install yasukotelin/tap/hj
 ```
 
+To use hj, add this to your shell profile:
+```bash
+echo 'source $(brew --prefix)/bin/hj' >> ~/.bashrc
+# or
+echo 'source $(brew --prefix)/bin/hj' >> ~/.zshrc
+```
+
+Then restart your shell or run:
+```bash
+source ~/.bashrc  # or ~/.zshrc
+```
+
 ### Manual Installation
 
 1. Download `hj.sh`
